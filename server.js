@@ -12,6 +12,11 @@ app.use(cors({
   origin: true,
   credentials: true
 }));
+
+// Stripe Webhookのための生データ保存
+app.use('/api/webhook/stripe', express.raw({ type: 'application/json' }));
+
+// その他のルート用のJSON parser
 app.use(express.json({ limit: '50mb' })); // 画像データ対応のため上限を増やす
 app.use(cookieParser());
 app.use(express.static('public'));
@@ -374,6 +379,93 @@ app.post('/api/subscription/portal', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Create portal session error:', error);
     res.status(500).json({ error: 'ポータルセッションの作成に失敗しました' });
+  }
+});
+
+// Stripe Webhookエンドポイント
+app.post('/api/webhook/stripe', async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+  
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+  
+  // イベントの処理
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const userId = session.metadata.user_id;
+        const plan = session.metadata.plan;
+        
+        // サブスクリプション情報を更新
+        await supabase
+          .from('subscriptions')
+          .update({
+            stripe_subscription_id: session.subscription,
+            plan: plan,
+            status: 'active',
+            current_period_start: new Date().toISOString(),
+            current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          })
+          .eq('user_id', userId);
+        
+        console.log('Subscription activated for user:', userId);
+        break;
+      }
+      
+      case 'customer.subscription.updated': {
+        const subscription = event.data.object;
+        
+        // サブスクリプションステータスを更新
+        await supabase
+          .from('subscriptions')
+          .update({
+            status: subscription.status,
+            cancel_at_period_end: subscription.cancel_at_period_end,
+            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+            current_period_end: new Date(subscription.current_period_end * 1000).toISOString()
+          })
+          .eq('stripe_subscription_id', subscription.id);
+        
+        console.log('Subscription updated:', subscription.id);
+        break;
+      }
+      
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object;
+        
+        // サブスクリプションを無料プランに戻す
+        await supabase
+          .from('subscriptions')
+          .update({
+            stripe_subscription_id: null,
+            plan: 'free',
+            status: 'active',
+            cancel_at_period_end: false
+          })
+          .eq('stripe_subscription_id', subscription.id);
+        
+        console.log('Subscription cancelled:', subscription.id);
+        break;
+      }
+      
+      default:
+        console.log(`Unhandled event type: ${event.type}`);
+    }
+    
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Webhook handler error:', error);
+    res.status(500).json({ error: 'Webhook handler error' });
   }
 });
 
