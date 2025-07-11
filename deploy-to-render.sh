@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 AI化学チャットボットをRenderにデプロイします..."
+echo "🚀 ChemGPTをRenderにデプロイします..."
 
 # Renderダッシュボードを開く
 echo "📝 以下の手順でデプロイを完了してください："

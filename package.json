@@ -1,7 +1,7 @@
 {
-  "name": "ai-chatbot",
+  "name": "chemgpt",
   "version": "1.0.0",
-  "description": "Configurable AI Chatbot with multiple API support",
+  "description": "ChemGPT - AI-powered chemistry chatbot with SMILES structure visualization",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
