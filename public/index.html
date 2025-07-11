@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI化学チャットボット - SMILES構造式自動描画</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SmilesDrawer library for chemical structure visualization -->
+    <script src="https://unpkg.com/smiles-drawer@1.2.0/dist/smiles-drawer.min.js"></script>
+    <!-- Supabase JavaScript Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="app-wrapper">
+        <!-- サイドバー -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <button class="new-chat-btn">
+                    <i class="fas fa-plus"></i>
+                    新しいチャット
+                </button>
+            </div>
+            
+            <div class="chat-history">
+                <div class="history-section">
+                    <h3 class="history-title">今日</h3>
+                    <div class="history-items" id="todayHistory">
+                        <!-- チャット履歴アイテムが動的に追加される -->
+                    </div>
+                </div>
+                
+                <div class="history-section">
+                    <h3 class="history-title">昨日</h3>
+                    <div class="history-items" id="yesterdayHistory">
+                        <!-- チャット履歴アイテムが動的に追加される -->
+                    </div>
+                </div>
+                
+                <div class="history-section">
+                    <h3 class="history-title">過去7日間</h3>
+                    <div class="history-items" id="weekHistory">
+                        <!-- チャット履歴アイテムが動的に追加される -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="sidebar-footer">
+                <div class="user-info" id="userInfo" style="display: none;">
+                    <i class="fas fa-user-circle"></i>
+                    <span id="userEmail"></span>
+                </div>
+                <div class="credit-info">
+                    <i class="fas fa-coins"></i>
+                    <span id="creditDisplay">$0.50</span> 残高
+                </div>
+                <button class="sidebar-btn" id="subscriptionBtn">
+                    <i class="fas fa-crown"></i>
+                    サブスクリプション
+                </button>
+                <button class="sidebar-btn" id="settingsBtn">
+                    <i class="fas fa-cog"></i>
+                    設定
+                </button>
+                <button class="sidebar-btn" id="toggleTheme">
+                    <i class="fas fa-moon"></i>
+                    ダークモード
+                </button>
+                <button class="sidebar-btn" id="authBtn">
+                    <i class="fas fa-sign-in-alt"></i>
+                    <span id="authBtnText">ログイン</span>
+                </button>
+            </div>
+        </aside>
+        
+        <!-- メインコンテンツ -->
+        <main class="main-content">
+            <!-- ヘッダー -->
+            <header class="main-header">
+                <button class="menu-toggle" id="menuToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h1 class="app-title">
+                    <i class="fas fa-flask"></i> 
+                    AI化学チャットボット
+                </h1>
+                <div class="header-actions">
+                    <button class="icon-btn" id="clearChat">
+                        <i class="fas fa-broom"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- チャットエリア -->
+            <div class="chat-container">
+                <div id="chatMessages" class="chat-messages">
+                    <!-- メッセージは動的に追加される -->
+                </div>
+                
+                <!-- 入力エリア -->
+                <div class="chat-input-wrapper">
+                    <div class="chat-input-container">
+                        <textarea 
+                            id="messageInput" 
+                            class="message-input" 
+                            placeholder="ログインしてメッセージを送信..."
+                            rows="1"
+                            disabled
+                        ></textarea>
+                        <input type="file" id="imageInput" accept="image/*" style="display: none;">
+                        <button id="imageBtn" class="image-btn" title="画像をアップロード">
+                            <i class="fas fa-image"></i>
+                        </button>
+                        <button id="sendBtn" class="send-btn" disabled>
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div class="input-footer">
+                        <div class="attached-image" id="attachedImage" style="display: none;">
+                            <img id="previewImage" alt="添付画像">
+                            <button class="remove-image" id="removeImageBtn">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <span class="char-count" id="charCount">0 / 4000</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 認証モーダル -->
+        <div id="authModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="authTitle">ログイン</h2>
+                    <button class="close-btn" id="closeAuthModal">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <div class="modal-body">
+                    <form id="authForm">
+                        <div class="form-group">
+                            <label for="authEmail">メールアドレス</label>
+                            <input 
+                                type="email" 
+                                id="authEmail" 
+                                class="form-input" 
+                                required
+                                placeholder="email@example.com"
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="authPassword">パスワード</label>
+                            <input 
+                                type="password" 
+                                id="authPassword" 
+                                class="form-input" 
+                                required
+                                placeholder="パスワード"
+                                minlength="6"
+                            >
+                        </div>
+
+                        <div class="form-group" id="fullNameGroup" style="display: none;">
+                            <label for="authFullName">お名前</label>
+                            <input 
+                                type="text" 
+                                id="authFullName" 
+                                class="form-input" 
+                                placeholder="山田 太郎"
+                            >
+                        </div>
+
+                        <div class="auth-error" id="authError" style="display: none;"></div>
+
+                        <button type="submit" class="auth-submit-btn" id="authSubmitBtn">
+                            ログイン
+                        </button>
+                    </form>
+
+                    <div class="auth-footer">
+                        <p id="authSwitchText">
+                            アカウントをお持ちでない方は
+                            <button type="button" class="auth-switch-btn" id="authSwitchBtn">
+                                新規登録
+                            </button>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 設定モーダル -->
+        <div id="settingsModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>設定</h2>
+                    <button class="close-btn" id="closeModal">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <div class="modal-body">
+                    <!-- AI選択 -->
+                    <div class="setting-group">
+                        <label for="apiSelect">使用するAI</label>
+                        <select id="apiSelect" class="setting-select">
+                            <option value="">選択してください</option>
+                            <!-- オプションは動的に追加される -->
+                        </select>
+                        <small class="help-text">
+                            .envファイルに設定されたAPIキーを持つAIのみ選択可能です
+                        </small>
+                    </div>
+
+                    <!-- モデル選択 -->
+                    <div class="setting-group" id="modelGroup" style="display: none;">
+                        <label for="modelSelect">モデル</label>
+                        <select id="modelSelect" class="setting-select">
+                            <!-- オプションは動的に追加される -->
+                        </select>
+                    </div>
+                    
+                    <!-- フォントサイズ設定 -->
+                    <div class="setting-group">
+                        <label for="fontSizeSelect">文字サイズ</label>
+                        <select id="fontSizeSelect" class="setting-select">
+                            <option value="14">小 (14px)</option>
+                            <option value="16" selected>標準 (16px)</option>
+                            <option value="18">大 (18px)</option>
+                            <option value="20">特大 (20px)</option>
+                        </select>
+                    </div>
+
+                    <!-- 保存ボタン -->
+                    <button id="saveSettings" class="save-btn">
+                        設定を保存
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- サブスクリプションモーダル -->
+        <div id="subscriptionModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>サブスクリプションプラン</h2>
+                    <button class="close-btn" id="closeSubscriptionModal">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="subscription-plans">
+                        <div class="plan-card">
+                            <h3>無料プラン</h3>
+                            <div class="plan-price">
+                                <span class="price-amount">¥0</span>
+                                <span class="price-period">/月</span>
+                            </div>
+                            <ul class="plan-features">
+                                <li><i class="fas fa-check"></i> 月額$0.50のAPI利用</li>
+                                <li><i class="fas fa-check"></i> GPT-4o、Gemini 2.5 Flash、Claude 3.7 Sonnet</li>
+                                <li><i class="fas fa-check"></i> SMILES構造式の自動生成</li>
+                                <li><i class="fas fa-times" style="color: #999"></i> 高性能モデルは利用不可</li>
+                            </ul>
+                            <div style="padding: 10px; text-align: center; color: #666;">
+                                現在のプラン
+                            </div>
+                        </div>
+                        
+                        <div class="plan-card">
+                            <h3>基本プラン</h3>
+                            <div class="plan-price">
+                                <span class="price-amount">¥1,000</span>
+                                <span class="price-period">/月</span>
+                            </div>
+                            <ul class="plan-features">
+                                <li><i class="fas fa-check"></i> 月額$10.00のAPI利用</li>
+                                <li><i class="fas fa-check"></i> 全てのAIモデルを利用可能</li>
+                                <li><i class="fas fa-check"></i> 高性能モデル（Claude Opus 4等）も利用可</li>
+                                <li><i class="fas fa-check"></i> SMILES構造式の自動生成</li>
+                            </ul>
+                            <button class="plan-btn" id="basicPlanBtn">
+                                基本プランを選択
+                            </button>
+                        </div>
+                        
+                        <div class="plan-card featured">
+                            <div class="featured-badge">おすすめ</div>
+                            <h3>プロプラン</h3>
+                            <div class="plan-price">
+                                <span class="price-amount">¥3,000</span>
+                                <span class="price-period">/月</span>
+                            </div>
+                            <ul class="plan-features">
+                                <li><i class="fas fa-check"></i> 月額$50.00のAPI利用</li>
+                                <li><i class="fas fa-check"></i> 全てのAIモデルを利用可能</li>
+                                <li><i class="fas fa-check"></i> 最高性能モデルも制限なく利用</li>
+                                <li><i class="fas fa-check"></i> 優先サポート</li>
+                                <li><i class="fas fa-check"></i> 最新AIモデルへの早期アクセス</li>
+                            </ul>
+                            <button class="plan-btn featured-btn" id="proPlanBtn">
+                                プロプランを選択
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="subscription-status" id="subscriptionStatus" style="display: none;">
+                        <h3>現在のプラン</h3>
+                        <p class="current-plan" id="currentPlan">読み込み中...</p>
+                        <button class="manage-btn" id="managePlanBtn">
+                            プランを管理
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stripe JavaScript SDK -->
+    <script src="https://js.stripe.com/v3/"></script>
+    <!-- 環境変数をJavaScriptに渡す -->
+    <script>
+        window.ENV = {
+            SUPABASE_URL: "https://wsymwcfofaurkdeereir.supabase.co",
+            SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzeW13Y2ZvZmF1cmtkZWVyZWlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIyNDE2ODcsImV4cCI6MjA2NzgxNzY4N30.ZuA6GzsM2KwdNWCynx0zKaNEQ7ObnJsr9XT7vom5vuM",
+            STRIPE_PUBLISHABLE_KEY: "pk_test_51234567890abcdefghijklmnopqrstuvwxyz" // テスト用キー
+        };
+    </script>
+    <script src="script.js"></script>
+</body>
+</html> 
