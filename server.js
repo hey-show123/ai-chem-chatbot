@@ -168,6 +168,13 @@ app.get('/api/available-apis', (req, res) => {
   res.json(available);
 });
 
+// Get Stripe publishable key
+app.get('/api/stripe-key', (req, res) => {
+  res.json({ 
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY 
+  });
+});
+
 // 認証関連のエンドポイント
 // サインアップ
 app.post('/api/auth/signup', async (req, res) => {
@@ -264,13 +271,39 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
 app.post('/api/subscription/create-checkout', requireAuth, async (req, res) => {
   const { plan } = req.body;
   
+  console.log('Create checkout request:', { userId: req.user.id, plan });
+  
   try {
     // Stripeカスタマーを作成または取得
-    const { data: subscription } = await supabase
+    const { data: subscription, error: subError } = await supabase
       .from('subscriptions')
       .select('stripe_customer_id')
       .eq('user_id', req.user.id)
-      .single();
+      .maybeSingle();
+    
+    console.log('Subscription lookup result:', { subscription, error: subError });
+    
+    // サブスクリプションレコードが存在しない場合は作成
+    if (!subscription || subError?.code === 'PGRST116') {
+      console.log('Creating new subscription record for user:', req.user.id);
+      
+      const { data: newSubscription, error: createError } = await supabase
+        .from('subscriptions')
+        .insert({
+          user_id: req.user.id,
+          plan: 'free',
+          status: 'active'
+        })
+        .select()
+        .single();
+      
+      if (createError) {
+        console.error('Failed to create subscription record:', createError);
+        throw new Error('サブスクリプションレコードの作成に失敗しました');
+      }
+      
+      subscription = newSubscription;
+    }
     
     let customerId = subscription?.stripe_customer_id;
     
@@ -295,6 +328,16 @@ app.post('/api/subscription/create-checkout', requireAuth, async (req, res) => {
       ? process.env.STRIPE_PRICE_BASIC_MONTHLY 
       : process.env.STRIPE_PRICE_PRO_MONTHLY;
     
+    console.log('Price ID:', priceId);
+    console.log('Customer ID:', customerId);
+    
+    // Stripeのモードを確認
+    const isTestMode = process.env.STRIPE_SECRET_KEY?.startsWith('sk_test_');
+    if (!isTestMode) {
+      // 本番モードの場合の警告
+      console.warn('⚠️  WARNING: Using live Stripe keys but account may not be activated');
+    }
+    
     // Checkout Sessionを作成
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -315,7 +358,26 @@ app.post('/api/subscription/create-checkout', requireAuth, async (req, res) => {
     res.json({ sessionId: session.id, url: session.url });
   } catch (error) {
     console.error('Create checkout error:', error);
-    res.status(500).json({ error: 'チェックアウトセッションの作成に失敗しました' });
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      type: error.type,
+      statusCode: error.statusCode
+    });
+    
+    // Stripeアカウントが有効化されていない場合の特別なメッセージ
+    let errorMessage = 'チェックアウトセッションの作成に失敗しました';
+    let errorDetails = error.message;
+    
+    if (error.message?.includes('Your account cannot currently make live charges')) {
+      errorMessage = 'Stripeアカウントが本番環境で有効化されていません';
+      errorDetails = 'テストモードを使用するか、Stripeアカウントの本人確認を完了してください。詳細は「STRIPE_テストモード設定.md」を参照してください。';
+    }
+    
+    res.status(500).json({ 
+      error: errorMessage,
+      details: errorDetails 
+    });
   }
 });
 

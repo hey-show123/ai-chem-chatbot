@@ -3,9 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChemGPT - AI化学チャットボット</title>
+    <title>ChemGPT - AI化学アシスタント</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=SF+Pro+Display:wght@600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Stylesheets -->
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⚗️%3C/text%3E%3C/svg%3E">
+    
     <!-- SmilesDrawer library for chemical structure visualization -->
     <script src="https://unpkg.com/smiles-drawer@1.2.0/dist/smiles-drawer.min.js"></script>
     <!-- Supabase JavaScript Client -->
@@ -52,7 +63,7 @@
                 </div>
                 <div class="credit-info">
                     <i class="fas fa-coins"></i>
-                    <span id="creditDisplay">$0.50</span> 残高
+                    <span id="creditDisplay">50 クレジット</span>
                 </div>
                 <button class="sidebar-btn" id="subscriptionBtn">
                     <i class="fas fa-crown"></i>
@@ -81,11 +92,11 @@
                     <i class="fas fa-bars"></i>
                 </button>
                 <h1 class="app-title">
-                    <i class="fas fa-flask"></i> 
+                    <i class="fas fa-atom"></i> 
                     ChemGPT
                 </h1>
                 <div class="header-actions">
-                    <button class="icon-btn" id="clearChat">
+                    <button class="icon-btn" id="clearChat" title="チャットをクリア">
                         <i class="fas fa-broom"></i>
                     </button>
                 </div>
@@ -261,7 +272,7 @@
                                 <span class="price-period">/月</span>
                             </div>
                             <ul class="plan-features">
-                                <li><i class="fas fa-check"></i> 月額$0.50のAPI利用</li>
+                                <li><i class="fas fa-check"></i> 月50クレジット</li>
                                 <li><i class="fas fa-check"></i> GPT-4o、Gemini 2.5 Flash、Claude 3.7 Sonnet</li>
                                 <li><i class="fas fa-check"></i> SMILES構造式の自動生成</li>
                                 <li><i class="fas fa-times" style="color: #999"></i> 高性能モデルは利用不可</li>
@@ -278,7 +289,7 @@
                                 <span class="price-period">/月</span>
                             </div>
                             <ul class="plan-features">
-                                <li><i class="fas fa-check"></i> 月額$10.00のAPI利用</li>
+                                <li><i class="fas fa-check"></i> 月1,000クレジット</li>
                                 <li><i class="fas fa-check"></i> 全てのAIモデルを利用可能</li>
                                 <li><i class="fas fa-check"></i> 高性能モデル（Claude Opus 4等）も利用可</li>
                                 <li><i class="fas fa-check"></i> SMILES構造式の自動生成</li>
@@ -296,7 +307,7 @@
                                 <span class="price-period">/月</span>
                             </div>
                             <ul class="plan-features">
-                                <li><i class="fas fa-check"></i> 月額$50.00のAPI利用</li>
+                                <li><i class="fas fa-check"></i> 月5,000クレジット</li>
                                 <li><i class="fas fa-check"></i> 全てのAIモデルを利用可能</li>
                                 <li><i class="fas fa-check"></i> 最高性能モデルも制限なく利用</li>
                                 <li><i class="fas fa-check"></i> 優先サポート</li>
@@ -327,7 +338,7 @@
         window.ENV = {
             SUPABASE_URL: "https://wsymwcfofaurkdeereir.supabase.co",
             SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzeW13Y2ZvZmF1cmtkZWVyZWlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIyNDE2ODcsImV4cCI6MjA2NzgxNzY4N30.ZuA6GzsM2KwdNWCynx0zKaNEQ7ObnJsr9XT7vom5vuM",
-            STRIPE_PUBLISHABLE_KEY: "pk_test_51234567890abcdefghijklmnopqrstuvwxyz" // テスト用キー
+            STRIPE_PUBLISHABLE_KEY: "" // サーバーから取得するため空にする
         };
     </script>
     <script src="script.js"></script>

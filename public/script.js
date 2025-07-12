@@ -86,11 +86,22 @@ let availableApis = {};
 // IME（日本語入力）の状態を管理
 let isComposing = false;
 
-// Stripeの初期化（テスト用のパブリックキー）
+// Stripeの初期化（サーバーから動的に取得）
 let stripe = null;
-if (typeof Stripe !== 'undefined') {
-    // 実際の運用時は、適切なパブリックキーに置き換えてください
-    stripe = Stripe('pk_test_51234567890abcdefghijklmnopqrstuvwxyz');
+async function initializeStripe() {
+    try {
+        const response = await fetch('/api/stripe-key');
+        const data = await response.json();
+        
+        if (data.publishableKey && typeof Stripe !== 'undefined') {
+            stripe = Stripe(data.publishableKey);
+            console.log('Stripe initialized successfully');
+        } else {
+            console.warn('Stripe publishable key not found or Stripe.js not loaded');
+        }
+    } catch (error) {
+        console.error('Failed to initialize Stripe:', error);
+    }
 }
 
 // サブスクリプション情報
@@ -99,7 +110,7 @@ let subscriptionInfo = {
     expiresAt: localStorage.getItem('subscriptionExpires') || null,
     messageCount: parseInt(localStorage.getItem('messageCount') || '0'),
     resetDate: localStorage.getItem('resetDate') || new Date().toISOString().split('T')[0],
-    credits: parseFloat(localStorage.getItem('userCredits') || '0.50'), // 無料ユーザーは$0.50
+    credits: parseInt(localStorage.getItem('userCredits') || '50'), // 無料ユーザーは50クレジット
     creditResetDate: localStorage.getItem('creditResetDate') || new Date().toISOString().split('T')[0]
 };
 
@@ -110,11 +121,11 @@ const MESSAGE_LIMITS = {
     pro: Infinity  // プロプラン: 無制限
 };
 
-// クレジット制限（ドル）
+// クレジット制限
 const CREDIT_LIMITS = {
-    free: 0.50,    // 無料プラン: $0.50/月
-    basic: 10.00,  // 基本プラン: $10.00/月
-    pro: 50.00     // プロプラン: $50.00/月
+    free: 50,      // 無料プラン: 50クレジット/月
+    basic: 1000,   // 基本プラン: 1,000クレジット/月
+    pro: 5000      // プロプラン: 5,000クレジット/月
 };
 
 // 無料プランで使用可能なモデル
@@ -124,36 +135,37 @@ const FREE_MODELS = [
     'claude-3.7-sonnet' // Anthropic
 ];
 
-// モデルごとのコスト（1リクエストあたりの推定ドル）
+// モデルごとのコスト（1リクエストあたりの推定クレジット）
 // 平均1000入力トークン + 500出力トークンと仮定
+// 1ドル = 100クレジット換算
 const MODEL_COSTS = {
     // OpenAI
-    'gpt-4o': 0.0375,                    // $15/1M input + $60/1M output
-    'o3-pro': 0.050,                     // 推定: 最高性能モデル
-    'o3': 0.040,                         // 推定: 高性能モデル
-    'gpt-4.1': 0.035,                    // 推定: GPT-4o相当
-    'o4-mini-high': 0.020,               // 推定: 中間モデル
-    'o4-mini': 0.010,                    // 推定: 軽量モデル
-    'gpt-4.1-mini': 0.008,               // 推定: 軽量モデル
-    'gpt-3.5-turbo': 0.002,              // $0.50/1M input + $1.50/1M output
+    'gpt-4o': 3.75,                      // 3.75クレジット
+    'o3-pro': 5.00,                      // 推定: 最高性能モデル
+    'o3': 4.00,                          // 推定: 高性能モデル
+    'gpt-4.1': 3.50,                     // 推定: GPT-4o相当
+    'o4-mini-high': 2.00,                // 推定: 中間モデル
+    'o4-mini': 1.00,                     // 推定: 軽量モデル
+    'gpt-4.1-mini': 0.80,                // 推定: 軽量モデル
+    'gpt-3.5-turbo': 0.20,               // 0.2クレジット
     
     // Gemini
-    'gemini-2.5-pro': 0.040,             // 推定: 最高性能
-    'gemini-2.5-flash': 0.020,           // 推定: 高速版
-    'gemini-2.0-flash': 0.015,           // 推定: 標準版
-    'gemini-2.0-flash-preview-image-generation': 0.025, // 画像生成は高め
-    'gemini-1.5-pro': 0.010,             // レガシー
-    'gemini-1.5-flash': 0.005,           // レガシー高速
+    'gemini-2.5-pro': 4.00,              // 推定: 最高性能
+    'gemini-2.5-flash': 2.00,            // 推定: 高速版
+    'gemini-2.0-flash': 1.50,            // 推定: 標準版
+    'gemini-2.0-flash-preview-image-generation': 2.50, // 画像生成は高め
+    'gemini-1.5-pro': 1.00,              // レガシー
+    'gemini-1.5-flash': 0.50,            // レガシー高速
     
     // Anthropic
-    'claude-opus-4': 0.060,              // 最高性能モデル
-    'claude-sonnet-4': 0.030,            // バランス型
-    'claude-3.7-sonnet': 0.025,          // ハイブリッド
-    'claude-3.5-sonnet': 0.020,          // 標準
-    'claude-3.5-haiku': 0.010,           // 高速
-    'claude-3-opus-20240229': 0.015,     // レガシー高性能
-    'claude-3-sonnet-20240229': 0.008,   // レガシーバランス
-    'claude-3-haiku-20240307': 0.003     // レガシー高速
+    'claude-opus-4': 6.00,               // 最高性能モデル
+    'claude-sonnet-4': 3.00,             // バランス型
+    'claude-3.7-sonnet': 2.50,           // ハイブリッド
+    'claude-3.5-sonnet': 2.00,           // 標準
+    'claude-3.5-haiku': 1.00,            // 高速
+    'claude-3-opus-20240229': 1.50,      // レガシー高性能
+    'claude-3-sonnet-20240229': 0.80,    // レガシーバランス
+    'claude-3-haiku-20240307': 0.30      // レガシー高速
 };
 
 // SmilesDrawerの初期化
@@ -231,14 +243,19 @@ const chemistryPrompt = `あなたは化学の専門家です。化学反応や�
 
 // 初期化
 async function init() {
-    // ダークモードの初期設定
-    if (localStorage.getItem('darkMode') === 'true') {
-        document.body.classList.add('dark-mode');
-        elements.toggleTheme.innerHTML = '<i class="fas fa-sun"></i> ライトモード';
-    }
+    // デフォルトはダークモード（シックなデザイン）
+    // localStorage に 'theme' が 'light' の場合のみライトモード
+    const theme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    elements.toggleTheme.innerHTML = theme === 'light' ? 
+        '<i class="fas fa-moon"></i> ダークモード' : 
+        '<i class="fas fa-sun"></i> ライトモード';
     
     // フォントサイズの適用
     applyFontSize(settings.fontSize);
+    
+    // Stripeの初期化
+    await initializeStripe();
     
     // 利用可能なAPIを確認
     await checkAvailableApis();
@@ -358,12 +375,12 @@ async function updateUsageData() {
     // 実際のAPIから月間使用量を取得する処理をここに実装
     // 今は仮の実装
     const limits = {
-        free: 0.50,
-        basic: 10.00,
-        pro: 50.00
+        free: 50,
+        basic: 1000,
+        pro: 5000
     };
     
-    subscriptionInfo.credits = limits[subscriptionInfo.plan] || 0.50;
+    subscriptionInfo.credits = limits[subscriptionInfo.plan] || 50;
     updateCreditDisplay();
 }
 
@@ -372,10 +389,12 @@ function updateCreditDisplay() {
     const maxCredit = CREDIT_LIMITS[subscriptionInfo.plan];
     const percentage = (subscriptionInfo.credits / maxCredit * 100).toFixed(0);
     
-    elements.creditDisplay.textContent = `$${subscriptionInfo.credits.toFixed(2)}`;
+    // クレジット数をカンマ区切りで表示
+    const creditText = subscriptionInfo.credits.toLocaleString();
+    elements.creditDisplay.textContent = `${creditText} クレジット`;
     
     // クレジット残高に応じて色を変更
-    if (subscriptionInfo.credits < 0.10 || percentage < 10) {
+    if (subscriptionInfo.credits < 10 || percentage < 10) {
         elements.creditInfo.classList.add('low-credit');
         elements.creditInfo.classList.remove('medium-credit');
     } else if (percentage < 30) {
@@ -564,12 +583,13 @@ function toggleSidebar() {
 
 // ダークモードのトグル
 function toggleTheme() {
-    document.body.classList.toggle('dark-mode');
-    const isDark = document.body.classList.contains('dark-mode');
-    localStorage.setItem('darkMode', isDark);
-    elements.toggleTheme.innerHTML = isDark ? 
-        '<i class="fas fa-sun"></i> ライトモード' : 
-        '<i class="fas fa-moon"></i> ダークモード';
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    elements.toggleTheme.innerHTML = newTheme === 'light' ? 
+        '<i class="fas fa-moon"></i> ダークモード' : 
+        '<i class="fas fa-sun"></i> ライトモード';
 }
 
 // 文字数カウントの更新
@@ -618,19 +638,19 @@ function showWelcomeMessage() {
                 <div class="suggested-prompts">
                     <button class="prompt-btn" data-prompt="アスピリンの構造を教えて">
                         <i class="fas fa-pills"></i>
-                        アスピリンの構造を教えて
+                        <span>アスピリンの構造を教えて</span>
                     </button>
                     <button class="prompt-btn" data-prompt="カフェインとニコチンの違いは？">
                         <i class="fas fa-coffee"></i>
-                        カフェインとニコチンの違いは？
+                        <span>カフェインとニコチンの違いは？</span>
                     </button>
                     <button class="prompt-btn" data-prompt="ベンゼン環を持つ化合物の例を教えて">
                         <i class="fas fa-ring"></i>
-                        ベンゼン環を持つ化合物の例
+                        <span>ベンゼン環を持つ化合物の例</span>
                     </button>
                     <button class="prompt-btn" data-prompt="エタノールの性質について説明して">
                         <i class="fas fa-wine-bottle"></i>
-                        エタノールの性質について
+                        <span>エタノールの性質について</span>
                     </button>
                 </div>
             `}
@@ -784,6 +804,11 @@ function showSettings() {
         handleApiChange();
         elements.modelSelect.value = settings.model;
     }
+    
+    // モーダル表示時のアニメーション
+    requestAnimationFrame(() => {
+        elements.settingsModal.querySelector('.modal-content').style.transform = 'translateY(0)';
+    });
 }
 
 // 設定モーダルの非表示
@@ -813,9 +838,9 @@ function handleApiChange() {
             option.className = isAvailable ? '' : 'disabled-option';
             
             if (isPremium) {
-                option.textContent = `${model.name} (Premium) - $${cost.toFixed(3)}/回`;
+                option.textContent = `${model.name} (Premium) - ${cost}クレジット/回`;
             } else {
-                option.textContent = `${model.name} - $${cost.toFixed(3)}/回`;
+                option.textContent = `${model.name} - ${cost}クレジット/回`;
             }
             
             elements.modelSelect.appendChild(option);
@@ -1040,7 +1065,14 @@ function addMessage(content, type, checkForSmiles = false) {
     messageDiv.appendChild(wrapperDiv);
     
     elements.chatMessages.appendChild(messageDiv);
-    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+    
+    // スムーズなスクロール
+    setTimeout(() => {
+        elements.chatMessages.scrollTo({
+            top: elements.chatMessages.scrollHeight,
+            behavior: 'smooth'
+        });
+    }, 100);
     
     return messageDiv.id;
 }
@@ -1260,14 +1292,21 @@ function addLoadingMessage() {
     
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
-    contentDiv.innerHTML = '<div class="loading"></div>';
+    contentDiv.innerHTML = '<div class="loading"></div> <span style="color: var(--text-tertiary); margin-left: 1rem;">考え中...</span>';
     
     wrapperDiv.appendChild(avatarDiv);
     wrapperDiv.appendChild(contentDiv);
     messageDiv.appendChild(wrapperDiv);
     
     elements.chatMessages.appendChild(messageDiv);
-    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+    
+    // スムーズなスクロール
+    setTimeout(() => {
+        elements.chatMessages.scrollTo({
+            top: elements.chatMessages.scrollHeight,
+            behavior: 'smooth'
+        });
+    }, 100);
     
     return messageDiv.id;
 }
@@ -1284,6 +1323,11 @@ function removeMessage(messageId) {
 function showSubscription() {
     elements.subscriptionModal.classList.add('show');
     updateSubscriptionStatus();
+    
+    // モーダル表示時のアニメーション
+    requestAnimationFrame(() => {
+        elements.subscriptionModal.querySelector('.modal-content').style.transform = 'translateY(0)';
+    });
 }
 
 function hideSubscription() {
@@ -1342,10 +1386,12 @@ async function createCheckoutSession(plan) {
             // Stripeチェックアウトページにリダイレクト
             window.location.href = data.url;
         } else {
-            throw new Error(data.error || 'チェックアウトセッションの作成に失敗しました');
+            const errorMessage = data.details ? `${data.error}: ${data.details}` : data.error || 'チェックアウトセッションの作成に失敗しました';
+            throw new Error(errorMessage);
         }
     } catch (error) {
         console.error('Checkout error:', error);
+        console.error('Error details:', error.message);
         addMessage(`エラー: ${error.message}`, 'bot');
     }
 }
@@ -1409,6 +1455,11 @@ function showAuthModal(isSignup = false) {
             authSwitchText.innerHTML = 'アカウントをお持ちでない方は <button type="button" class="auth-switch-btn">新規登録</button>';
         }
     }
+    
+    // モーダル表示時のアニメーション
+    requestAnimationFrame(() => {
+        elements.authModal.querySelector('.modal-content').style.transform = 'translateY(0)';
+    });
 }
 
 // 認証モーダルを閉じる
@@ -1583,4 +1634,4 @@ function applyFontSize(size) {
 }
 
 // 初期化実行
-document.addEventListener('DOMContentLoaded', init); 
+document.addEventListener('DOMContentLoaded', init);

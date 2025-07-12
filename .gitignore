@@ -6,8 +6,12 @@ yarn-error.log*
 
 # 環境変数
 .env
+.env.*
 .env.local
 .env.production
+.env.test
+.env.backup
+.env.production-backup
 
 # ログ
 logs/
@@ -30,3 +34,7 @@ Thumbs.db
 # ビルドファイル
 dist/
 build/
+
+# テストスクリプト（APIキーが含まれる可能性があるため）
+*test-env.sh
+*test-mode.sh
